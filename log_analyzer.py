@@ -7,11 +7,15 @@ import sys
 import re
 import gzip
 import datetime
+from datetime import date
 import json
 import errno
-import click
-from datetime import date
 from collections import namedtuple
+from string import Template
+
+
+import click
+
 from pprint import pprint
 
 from config import setup_logging
@@ -68,10 +72,8 @@ def report_add(report, url, time, total_time, total_count):
          "count_perc": count/total_count*100},
     )
 
-def parse_log(config):
+def gen_parse_log(config):
     
-    logger.info('Start')
-
     last_log = get_last_log(config['LOG_DIR'])
 
     if last_log:
@@ -87,30 +89,46 @@ def parse_log(config):
 
     total_time = 0
     total_count = 0
-    urls = {}
+
     for line in log:
         line = line.decode('utf-8')
-
         if not re.search(LOG_PATTERN, line):
             # ошибка ли?
             logger.error(f'Log doest match log pattern\n {line}')
             return None
 
-
         link = line.split()[6]
         time = line.split()[-1]
+        total_count += 1
+        total_time += float(time)
+
+        yield (link, time, total_count, total_time, last_log.date)
+
+def create_report(config):
+
+    urls = {}
+    report = []
+    for link, time, total_count, total_time, date in gen_parse_log(config):
         if link not in urls:
             urls.update({link: [float(time), ]})
         else:
             urls[link].append(float(time))
-        total_count += 1
-        total_time += float(time)
-
-    report = []
-
+        
     for url, time in urls.items():
         report_add(report, url, urls[url], total_time, total_count)
 
+    with open('./reports/report.html') as file:
+        html_template = file.read()
+
+    table_json = {'table_json': sorted(
+        report, key=lambda i: i['time_sum'], reverse=True)[:config['REPORT_SIZE']]}
+
+    html_report = Template(html_template).safe_substitute(table_json)
+
+    report_file = '{}/report-{}.html'.format(config['REPORT_DIR'], date.strftime('%Y.%m.%d'))
+    with open(report_file, 'w+') as file:
+        file.write(html_report)
+    
     pprint(sorted(report, key=lambda i: i['count'], reverse=True)[0])
 
  
@@ -138,7 +156,7 @@ def main(config_file):
             os.strerror(errno.ENOENT), config['REPORT_DIR']))
         sys.exit(2)
 
-    parse_log(config)
+    create_report(config)
 
 if __name__ == "__main__":
     main()
