@@ -1,7 +1,21 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import os
+import getopt
+import sys
+import re
+import gzip
+import datetime
+import json
+import errno
+import click
+from datetime import date
+from collections import namedtuple
 from pprint import pprint
+
+from config import setup_logging
+logger = setup_logging(__name__)
 
 # log_format ui_short '$remote_addr  $remote_user $http_x_real_ip [$time_local] "$request" '
 #                     '$status $body_bytes_sent "$http_referer" '
@@ -15,62 +29,74 @@ config = {
 }
 
 
-def calc_time_avg(time: list, count: int):
-    return sum(time)/count
+LOG_NAME_PATTERN = r'^nginx-access-ui\.log-(\d{4}\d{2}\d{2})(.gz)?$'
+LOG_PATTERN = r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+(.+?)\s+(.+?)\s+(\[.+?\])\s+(\".+?\")\s+(\d{1,3})\s+(\d+)\s+(\".+?\")\s+(\".+?\")\s+(\".+?\")\s+(\".+?\")\s+(\".+?\")\s+(\d+\.\d+)$'
+Log = namedtuple('Log' , 'path date') 
 
 
-def calc_time_max(time: list):
-    return max(time)
+def get_last_log(directory): 
 
+    current = 0
+    last = Log('',date(1970,1,1))
 
-def calc_time_sum(time: list):
-    return sum(time)
-
-
-def calc_time_med(time: list, count: int):
-    if count > 2:
-        return sorted(time)[int((count+1)/2)]
+    for dirpath,_,filenames in os.walk(directory): 
+        for f in filenames: 
+            match = re.search(LOG_NAME_PATTERN, f)
+            if match:
+                current = datetime.datetime.strptime(match.group(1), '%Y%m%d').date()
+                if current > last.date:
+                    last = Log(os.path.abspath(os.path.join(dirpath, f)), current)
+    
+    if last.path == '':
+        logger.warning('No one file match log pattern')
+        return None
     else:
-        return time[0]
-
-
-def calc_time_perc(time_sum: float, total_time: float):
-    return time_sum/total_time*100
-
-
-def calc_perc(count: int, total_count: int):
-    return count/total_count*100
+        return last
 
 
 def report_add(report, url, time, total_time, total_count):
     count = len(time)
-    time_avg = calc_time_avg(time, count)
-    time_max = calc_time_max(time)
-    time_sum = calc_time_sum(time)
-    time_med = calc_time_med(time, count)
-    time_perc = calc_time_perc(time_sum, total_time)
-    count_perc = calc_perc(count, total_count)
-
+    time_sum = sum(time)
     report.append(
-        {"count": count,
-         "time_avg": time_avg,
-         "time_max": time_max,
+        {"url": url,
+         "count": count,
          "time_sum": time_sum,
-         "url": url,
-         "time_med": time_med,
-         "time_perc": time_perc,
-         "count_perc": count_perc}
+         "time_avg": time_sum/count,
+         "time_max": max(time),
+         "time_med": sorted(time)[int((count+1)/2)] if count > 2 else time[0],
+         "time_perc": time_sum/total_time*100,
+         "count_perc": count/total_count*100},
     )
 
+def parse_log(config):
+    
+    logger.info('Start')
 
-def main():
-    with open('nginx-access-ui.log-20170630', 'r') as logfile:
-        log = logfile.readlines()
+    last_log = get_last_log(config['LOG_DIR'])
+
+    if last_log:
+        if last_log.path.endswith(".gz"):
+            log = gzip.open(last_log.path, 'rb+')
+        else:
+            log = open(last_log.path, 'rb+')
+    else:
+        logger.info('Logs not found')
+        return None
+
+    logger.info(f'Last log: {os.path.basename(last_log.path)}')
 
     total_time = 0
     total_count = 0
     urls = {}
     for line in log:
+        line = line.decode('utf-8')
+
+        if not re.search(LOG_PATTERN, line):
+            # ошибка ли?
+            logger.error(f'Log doest match log pattern\n {line}')
+            return None
+
+
         link = line.split()[6]
         time = line.split()[-1]
         if link not in urls:
@@ -85,10 +111,34 @@ def main():
     for url, time in urls.items():
         report_add(report, url, urls[url], total_time, total_count)
 
-    for i in report:
-        if i['count'] > 1000:
-            pprint(i)
+    pprint(sorted(report, key=lambda i: i['count'], reverse=True)[0])
 
+ 
+@click.command()
+@click.option('-c','--config', 'config_file', default='./config.json', help='Path to config file')
+def main(config_file):
+
+    try:
+        with open(config_file) as file:
+            cfg = json.loads(file.read())
+            for k, v in config.items():
+                if k in cfg:
+                    config[k] = cfg[k]
+    except Exception as e:
+        logger.error(f'{e}')
+        logger.warning('Using default config')
+    
+    if not os.path.exists(config['LOG_DIR']):
+        logger.error('{} {}'.format(
+            os.strerror(errno.ENOENT), config['LOG_DIR']))
+        sys.exit(2)
+
+    if not os.path.exists(config['REPORT_DIR']):
+        logger.error('{} {}'.format(
+            os.strerror(errno.ENOENT), config['REPORT_DIR']))
+        sys.exit(2)
+
+    parse_log(config)
 
 if __name__ == "__main__":
     main()
