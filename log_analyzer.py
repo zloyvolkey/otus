@@ -90,7 +90,7 @@ def gen_parse_log(last_log):
         line = line.decode('utf-8')
         if not re.search(LOG_PATTERN, line):
             errors_count += 1
-            logger.warning(f'Log doest match log pattern\n {line}')
+            # logger.warning(f'Log doest match log pattern\n {line}')
             continue
 
         link = line.split()[6]
@@ -131,6 +131,8 @@ def create_report(config):
     except Exception:
         logger.exception('Error while parsing log')
         raise
+
+    logger.warning(f'Errors count {errors_count}%')
 
     logger.info('Calculating time')
 
@@ -173,8 +175,6 @@ def create_report(config):
         raise
 
     logger.info('Done')
-    logger.warning(f'Errors count {errors_count/total_count*100}%')
-
 
     pprint(sorted(report, key=lambda i: i['count'], reverse=True)[0])
 
@@ -209,7 +209,7 @@ def main(config_file):
     try:
         create_report(config)
     except Exception as e:
-        logger.error('Can\'t create report')
+        logger.error(f'Can\'t create report {e}')
 
 
 if __name__ == "__main__":
