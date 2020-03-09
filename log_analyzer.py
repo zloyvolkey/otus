@@ -56,9 +56,8 @@ def get_last_log(directory):
                 if current_date > last_log.date:
                     last_log = Log(os.path.abspath(
                         os.path.join(dirpath, f)), current_date)
-   
-    return last_log
 
+    return last_log
 
 
 def check_report(config, last_log):
@@ -99,7 +98,7 @@ def gen_parse_log(last_log):
         total_time += float(time)
 
         yield (link, time, total_count, total_time, last_log.date, errors_count)
-    
+
     log.close()
 
 
