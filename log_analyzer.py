@@ -93,7 +93,7 @@ def gen_parse_log(last_log):
             continue
 
         link = line.split()[6]
-        time = line.split()[-1]
+        time = float(line.split()[-1])
         total_count += 1
         total_time += float(time)
 
@@ -124,9 +124,9 @@ def create_report(config):
     try:
         for link, time, total_count, total_time, date, errors_count in gen_parse_log(last_log):
             if link not in urls:
-                urls.update({link: [float(time), ]})
+                urls.update({link: [time, ]})
             else:
-                urls[link].append(float(time))
+                urls[link].append(time)
     except Exception:
         logger.exception('Error while parsing log')
         raise
