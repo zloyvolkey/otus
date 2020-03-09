@@ -3,7 +3,7 @@ import pytest
 import os
 from time import sleep
 from datetime import date, datetime
-from log_analyzer import get_last_log, gen_parse_log, Log
+from log_analyzer import get_last_log, gen_parse_log, calc_time, Log
 
 
 def test_get_last_log(tmpdir):
@@ -37,6 +37,23 @@ def test_get_last_log(tmpdir):
     assert assertion_path == last_log.path
 
 
+def test_calc_time():
+    data = {'count': 10,
+            'count_perc': 100.0,
+            'time_avg': 5.5,
+            'time_max': 10.0,
+            'time_med': 6.0,
+            'time_perc': 100.0,
+            'time_sum': 55.0,
+            'url': '/test'}
+
+    time = []
+    for x in range(1, 11):
+        time.append(x)
+
+    assert data == calc_time(data['url'], time, 55, 10)
+
+
 def test_gen_parse_log(tmpdir):
     tmpdir.chdir()
 
@@ -47,26 +64,19 @@ def test_gen_parse_log(tmpdir):
         file.write('1.2.3.4 \
             abc \
             - \
-            [29/Jun/2017:03:50:34 +0300] \
+            [01/Jan/1970:11:11:11 +0300] \
             \"GET \
-            /api/1/campaigns/?id=4703657 HTTP/1.1\" \
+            /test HTTP/1.1\" \
             200 \
             660 \
             \"-\" \
             \"-\" \
             \"-\" \
-            \"14-88\" \
+            \"11-22\" \
             \"-\" \
-            0.123')
+            0.123\n')
 
-    data = {"count": 1,
-            "time_avg": 0.123,
-            "time_max": 0.123,
-            "time_sum": 0.123,
-            "url": "/api/1/campaigns/?id=4703657",
-            "time_med": 0.123,
-            "time_perc": 100,
-            "count_perc": 100}
+    url = "/test"
 
     log = Log(test_file_path, assertion_date)
 
@@ -74,7 +84,7 @@ def test_gen_parse_log(tmpdir):
 
     #url, time, total_count, total_time, url_date, errors_count
     gen_data = gen_data[0]
-    assert gen_data[0] == data['url']
+    assert gen_data[0] == url
     assert gen_data[1] == 0.123
     assert gen_data[2] == 1
     assert gen_data[3] == 0.123

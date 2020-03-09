@@ -35,7 +35,7 @@ config = {
 
 
 LOG_NAME_PATTERN = r'^nginx-access-ui\.log-(\d{4}\d{2}\d{2})(.gz)?$'
-LOG_PATTERN = r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+(.+?)\s+(.+?)\s+(\[.+?\])\s+(\".+?\")\s+(\d{1,3})\s+(\d+)\s+(\".+?\")\s+(\".+?\")\s+(\".+?\")\s+(\".+?\")\s+(\".+?\")\s+(\d+\.\d+)$'
+LOG_PATTERN = r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+(.+?)\s+(.+?)\s+(\[.+?\])\s+(\".+?\")\s+(\d{1,3})\s+(\d+)\s+(\".+?\")\s+(\".+?\")\s+(\".+?\")\s+(\".+?\")\s+(\".+?\")\s+(\d+\.?\d*)$'
 Log = namedtuple('Log', 'path date')
 
 
@@ -102,6 +102,20 @@ def gen_parse_log(last_log):
     log.close()
 
 
+def calc_time(url, time, total_time, total_count):
+    count = len(time)
+    time_sum = sum(time)
+    return {
+        "url": url,
+        "count": count,
+        "time_sum": time_sum,
+        "time_avg": time_sum/count,
+        "time_max": max(time),
+        "time_med": sorted(time)[int((count+1)/2)] if count > 2 else time[0],
+        "time_perc": time_sum/total_time*100,
+        "count_perc": count/total_count*100}
+
+
 def create_report(config):
     """ Creating report """
 
@@ -121,6 +135,8 @@ def create_report(config):
 
     urls = {}
     report = []
+    errors_count = 0
+    total_count = 0
     try:
         for link, time, total_count, total_time, date, errors_count in gen_parse_log(last_log):
             if link not in urls:
@@ -131,23 +147,17 @@ def create_report(config):
         logger.exception('Error while parsing log')
         raise
 
-    logger.warning(f'Errors count {errors_count}%')
+    if total_count is 0:
+        logger.error('Log is empty')
+        raise
+
+    if errors_count:
+        logger.warning(f'Errors count {errors_count}%')
 
     logger.info('Calculating time')
 
     for url, time in urls.items():
-        #report_add(report, url, urls[url], total_time, total_count)
-        count = len(time)
-        time_sum = sum(time)
-        report.append(
-            {"url": url,
-             "count": count,
-             "time_sum": time_sum,
-             "time_avg": time_sum/count,
-             "time_max": max(time),
-             "time_med": sorted(time)[int((count+1)/2)] if count > 2 else time[0],
-             "time_perc": time_sum/total_time*100,
-             "count_perc": count/total_count*100},)
+        report.append(calc_time(url, time, total_time, total_count))
 
     try:
         with open(config['REPORT_DIR']+'/report.html') as file:
@@ -208,7 +218,7 @@ def main(config_file):
     try:
         create_report(config)
     except Exception as e:
-        logger.error(f'Can\'t create report {e}')
+        logger.exception(f'Can\'t create report {e}')
 
 
 if __name__ == "__main__":
