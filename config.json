@@ -1,5 +1,5 @@
 {
-    "REPORT_SIZE": 10,
+    "REPORT_SIZE": 1000,
     "REPORT_DIR": "/home/user/OTUS/reports",
     "LOG_DIR": "/home/user/OTUS/log"
 }

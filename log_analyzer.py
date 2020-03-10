@@ -1,5 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
+""" Log analyzer """
 
 import os
 import getopt
@@ -8,14 +9,12 @@ import re
 import gzip
 import datetime
 from datetime import date
-import traceback
 import json
 import errno
 from collections import namedtuple
 from string import Template
 
-
-import click
+# import click
 
 from pprint import pprint
 
@@ -40,37 +39,35 @@ Log = namedtuple('Log', 'path date')
 
 
 def get_last_log(directory):
-    """ Return (path, date) last log in directory 
-        or (None, default_date) if log not found 
-    """
+    """ Return (path, date) last log in directory
+    or (None, default_date) if log not found """
     default_date = date(1970, 1, 1)
     current_date = 0
     last_log = Log(None, default_date)
 
     for dirpath, _, filenames in os.walk(directory):
-        for f in filenames:
-            match = re.search(LOG_NAME_PATTERN, f)
+        for file in filenames:
+            match = re.search(LOG_NAME_PATTERN, file)
             if match:
                 current_date = datetime.datetime.strptime(
                     match.group(1), '%Y%m%d').date()
                 if current_date > last_log.date:
                     last_log = Log(os.path.abspath(
-                        os.path.join(dirpath, f)), current_date)
+                        os.path.join(dirpath, file)), current_date)
 
     return last_log
 
 
-def check_report(config, last_log):
+def check_report(cfg, last_log):
     """ Check existing report
-        return report file name if exist 
-        or None 
-    """
+    return report file name if exist
+    or None """
 
     report_file = 'report-{}.html'.format(last_log.date.strftime('%Y.%m.%d'))
-    if report_file in os.listdir(config['REPORT_DIR']):
+    if report_file in os.listdir(cfg['REPORT_DIR']):
         return report_file
-    else:
-        return None
+
+    return None
 
 
 def gen_parse_log(last_log):
@@ -103,6 +100,7 @@ def gen_parse_log(last_log):
 
 
 def calc_time(url, time, total_time, total_count):
+    """ Calculate times """
     count = len(time)
     time_sum = sum(time)
     return {
@@ -116,29 +114,31 @@ def calc_time(url, time, total_time, total_count):
         "count_perc": count/total_count*100}
 
 
-def create_report(config):
+def create_report(cfg):
     """ Creating report """
 
     logger.info('Getting last log')
-    last_log = get_last_log(config['LOG_DIR'])
+    last_log = get_last_log(cfg['LOG_DIR'])
     if last_log.path:
         logger.info('Check existing report')
-        report = check_report(config, last_log)
+        report = check_report(cfg, last_log)
         if report:
             logger.info(f'Report already have being done {report}')
             return None
     else:
         logger.warning('Logs not found')
-        return None
+        return
 
     logger.info(f'Parsing last log: {os.path.basename(last_log.path)}')
 
     urls = {}
     report = []
-    errors_count = 0
-    total_count = 0
+    errors_count = None
+    total_count = None
+    total_time = None
+    log_date = None
     try:
-        for link, time, total_count, total_time, date, errors_count in gen_parse_log(last_log):
+        for link, time, total_count, total_time, log_date, errors_count in gen_parse_log(last_log):
             if link not in urls:
                 urls.update({link: [time, ]})
             else:
@@ -147,9 +147,9 @@ def create_report(config):
         logger.exception('Error while parsing log')
         raise
 
-    if total_count is 0:
+    if not total_count:
         logger.error('Log is empty')
-        raise
+        return
 
     if errors_count:
         logger.warning(f'Errors count {errors_count}%')
@@ -160,19 +160,19 @@ def create_report(config):
         report.append(calc_time(url, time, total_time, total_count))
 
     try:
-        with open(config['REPORT_DIR']+'/report.html') as file:
+        with open(cfg['REPORT_DIR']+'/report.html') as file:
             html_template = file.read()
     except Exception:
         logger.exception('Can\'t read report.html')
         raise
 
     table_json = {'table_json': sorted(
-        report, key=lambda i: i['time_sum'], reverse=True)[:config['REPORT_SIZE']]}
+        report, key=lambda i: i['time_sum'], reverse=True)[:cfg['REPORT_SIZE']]}
 
     html_report = Template(html_template).safe_substitute(table_json)
 
     report_file = '{}/report-{}.html'.format(
-        config['REPORT_DIR'], date.strftime('%Y.%m.%d'))
+        cfg['REPORT_DIR'], log_date.strftime('%Y.%m.%d'))
 
     logger.info(f'Writing report to {report_file}')
 
@@ -187,20 +187,26 @@ def create_report(config):
 
     pprint(sorted(report, key=lambda i: i['count'], reverse=True)[0])
 
+    return
 
-@click.command()
-@click.option('-c', '--config', 'config_file', default='./config.json', help='Path to config file')
-def main(config_file):
 
-    try:
-        with open(config_file) as file:
-            cfg = json.loads(file.read())
-            for k, _ in config.items():
-                if k in cfg:
-                    config[k] = cfg[k]
-    except Exception as e:
-        logger.error(f'{e}')
-        logger.warning('Using default config')
+# @click.command()
+# @click.option('-c', '--config', 'config_file', default='./config.json', help='Path to config file')
+# def main(config_file):
+def main():
+    """ Main """
+    options, _ = getopt.getopt(sys.argv[1:], 'c:', ['config=', ])
+
+    for opt, arg in options:
+        if opt in ('-c', '--config'):
+            try:
+                with open(arg) as file:
+                    cfg = json.loads(file.read())
+                    for k, _ in config.items():
+                        if k in cfg:
+                            config[k] = cfg[k]
+            except Exception:
+                logger.warning('Using default config')
 
     logger.info('Checking config')
     if not os.path.exists(config['LOG_DIR']):
@@ -217,8 +223,8 @@ def main(config_file):
 
     try:
         create_report(config)
-    except Exception as e:
-        logger.exception(f'Can\'t create report {e}')
+    except Exception as exc:
+        logger.exception(f'Can\'t create report {exc}')
 
 
 if __name__ == "__main__":
