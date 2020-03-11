@@ -3,7 +3,7 @@ import pytest
 import os
 from time import sleep
 from datetime import date, datetime
-from log_analyzer import get_last_log, gen_parse_log, calc_time, Log
+from log_analyzer import get_last_log, gen_parse_log, calc_time, Log, LogRecord
 
 
 def test_get_last_log(tmpdir):
@@ -13,7 +13,7 @@ def test_get_last_log(tmpdir):
     # no logs in folder
     last_log = get_last_log(tmpdir)
     assert last_log.path == None
-    assert last_log.date == date(1970, 1, 1)
+    assert last_log.date == None
 
     # add .bz2 archive
     open('nginx-access-ui.log-20040101.bz2', 'a').close()
@@ -59,7 +59,6 @@ def test_gen_parse_log(tmpdir):
 
     test_file_plain = 'nginx-access-ui.log-20010101'
     test_file_path = '{}/{}'.format(tmpdir, test_file_plain)
-    assertion_date = date(2002, 1, 1)
     with open(test_file_plain, 'a') as file:
         file.write('1.2.3.4 \
             abc \
@@ -78,15 +77,8 @@ def test_gen_parse_log(tmpdir):
 
     url = "/test"
 
-    log = Log(test_file_path, assertion_date)
+    assert_record = LogRecord(url, 0.123)
+    log_record = list(gen_parse_log(test_file_path))[0]
 
-    gen_data = list(gen_parse_log(log))
-
-    #url, time, total_count, total_time, url_date, errors_count
-    gen_data = gen_data[0]
-    assert gen_data[0] == url
-    assert gen_data[1] == 0.123
-    assert gen_data[2] == 1
-    assert gen_data[3] == 0.123
-    assert gen_data[4] == assertion_date
-    assert gen_data[5] == 0
+    assert log_record == assert_record
+    
