@@ -5,6 +5,7 @@
 import os
 import re
 import gzip
+import glob
 import argparse
 import datetime
 import json
@@ -55,18 +56,18 @@ def get_last_log(directory):
 
     last_log = Log(None, None)
 
-    for dirpath, _, filenames in os.walk(directory):
-        for file in filenames:
-            match = log_name_pattern.search(file)
-            if match:
-                try:
-                    current_date = datetime.datetime.strptime(
-                        match.group('date'), '%Y%m%d').date()
-                    if not last_log.date or current_date > last_log.date:
-                        last_log = Log(os.path.abspath(
-                            os.path.join(dirpath, file)), current_date)
-                except Exception:
-                    logger.error('Can\'t parse log file date')
+    filenames = glob.glob(directory+'/*')
+
+    for file in filenames:
+        match = log_name_pattern.search(os.path.basename(file))
+        if match:
+            try:
+                current_date = datetime.datetime.strptime(
+                    match.group('date'), '%Y%m%d').date()
+                if not last_log.date or current_date > last_log.date:
+                    last_log = Log(file, current_date)
+            except Exception:
+                logger.error('Can\'t parse log file date')
 
     return last_log
 
@@ -165,17 +166,17 @@ def create_report(cfg):
     last_log = get_last_log(cfg['LOG_DIR'])
     if not last_log.path:
         logger.error('Logs not found')
-        return None
+        return
 
     logger.info('Check existing report')
     report_file = cfg['REPORT_DIR'] + \
         '/report-{}.html'.format(last_log.date.strftime('%Y.%m.%d'))
     if os.path.exists(report_file):
         logger.info(f'Report already have being done {report_file}')
-        return None
+        return
 
     logger.info("Generate report")
-    report = (generate_report(last_log.path))
+    report = generate_report(last_log.path)
 
     logger.info(f'Writing report to {report_file}')
     write_report(cfg, report, report_file)
@@ -183,22 +184,31 @@ def create_report(cfg):
     logger.info('Done')
 
 
-def setup_config():
-    """ Read config file from arguments and return config """
+def get_config_path_from_cli():
+    """ Check arguments and return config file path or None"""
 
     logger.info('Set up config')
 
     cfg_parser = argparse.ArgumentParser("python3 log_analyzer.py")
     cfg_parser.add_argument('--config', action='store',
                             help='Path to config file')
-    cfg_file = cfg_parser.parse_args().config
+    return cfg_parser.parse_args().config
 
+
+def setup_config(config_file):
+    """ Read config from file and update current"""
     try:
-        with open(cfg_file) as file:
-            cfg = json.loads(file.read())
+        with open(config_file) as file:
+            cfg = json.load(file)
             config.update(cfg)
     except Exception:
         logger.warning('Can\'t set up config from file. Using default config')
+
+    return config
+
+
+def check_config(config):
+    """ Checking config """
 
     if not os.path.exists(config['LOG_DIR']):
         logger.error('No such directory {}'.format(config['LOG_DIR']))
@@ -208,14 +218,17 @@ def setup_config():
         logger.info('Report dir doesn\'t exist. Creating new.')
         os.mkdir(config['REPORT_DIR'])
 
-    return config
+    if config['REPORT_SIZE'] < 1:
+        logger.error('Wrong report size!')
+        raise
 
 
 def main():
     """ Main """
 
     try:
-        cfg = setup_config()
+        cfg = setup_config(get_config_path_from_cli())
+        check_config(cfg)
         create_report(cfg)
     except Exception as exc:
         logger.exception(f'Can\'t create report {exc}')

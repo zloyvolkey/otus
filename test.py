@@ -11,7 +11,7 @@ def test_get_last_log(tmpdir):
     tmpdir.chdir()
 
     # no logs in folder
-    last_log = get_last_log(tmpdir)
+    last_log = get_last_log(str(tmpdir))
     assert last_log.path == None
     assert last_log.date == None
 
@@ -23,7 +23,7 @@ def test_get_last_log(tmpdir):
     open(test_file_plain, 'a').close()
     assertion_date = date(2001, 1, 1)
     assertion_path = '{}/{}'.format(tmpdir, test_file_plain)
-    last_log = get_last_log(tmpdir)
+    last_log = get_last_log(str(tmpdir))
     assert assertion_date == last_log.date
     assert assertion_path == last_log.path
 
@@ -32,7 +32,7 @@ def test_get_last_log(tmpdir):
     open(test_file_gz, 'a').close()
     assertion_date = date(2002, 1, 1)
     assertion_path = '{}/{}'.format(tmpdir, test_file_gz)
-    last_log = get_last_log(tmpdir)
+    last_log = get_last_log(str(tmpdir))
     assert assertion_date == last_log.date
     assert assertion_path == last_log.path
 
