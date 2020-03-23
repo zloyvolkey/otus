@@ -23,8 +23,10 @@ logger = setup_logging(__name__)
 config = {
     "REPORT_SIZE": 1000,
     "REPORT_DIR": "/home/user/OTUS/reports",
-    "LOG_DIR": "/home/user/OTUS/log"
+    "LOG_DIR": "/home/user/OTUS/log",
+    "ERROR_LIMIT": 1,
 }
+DEFAULT_CONFIG = './config.json'
 
 log_record_pattern = re.compile(r"""
                 ^(\d+\.\d+\.\d+\.\d+)\s+            # $remote_addr
@@ -48,6 +50,49 @@ log_name_pattern = re.compile(
 
 Log = namedtuple('Log', 'path date')
 LogRecord = namedtuple('LogRecord', 'url time')
+
+
+def get_args_from_cli():
+    """ Return arguments from CLI """
+
+    cfg_parser = argparse.ArgumentParser("python3 log_analyzer.py")
+    cfg_parser.add_argument('--config',
+                            help='Path to config file',
+                            default=DEFAULT_CONFIG)
+    return cfg_parser.parse_args()
+
+
+def setup_config(config_file):
+    """ Read config from file and update current"""
+    try:
+        with open(config_file) as file:
+            cfg = json.load(file)
+            config.update(cfg)
+    except Exception:
+        logger.error('Can\'t set up config from file!')
+        raise
+
+    return config
+
+
+def check_config(config):
+    """ Checking config """
+
+    if not os.path.exists(config['LOG_DIR']):
+        logger.error('No such directory {}'.format(config['LOG_DIR']))
+        raise FileExistsError
+
+    if not os.path.exists(config['REPORT_DIR']):
+        logger.info('Report dir doesn\'t exist. Creating new.')
+        os.mkdir(config['REPORT_DIR'])
+
+    if config['REPORT_SIZE'] < 1:
+        logger.error('Wrong report size!')
+        raise
+
+    if config['ERROR_LIMIT'] < 0:
+        logger.error('Wrong error limit value!')
+        raise
 
 
 def get_last_log(directory):
@@ -119,9 +164,6 @@ def generate_report(log_path, error_limit=None):
     total_time = 0
 
     for record in gen_parse_log(log_path):
-        if error_limit and errors_count > error_limit:
-            logger.error("Exceeded errors limit!")
-            raise Exception
         if not record:
             errors_count += 1
             continue
@@ -133,13 +175,16 @@ def generate_report(log_path, error_limit=None):
         total_count += 1
 
     if not total_count:
-        logger.error('Log is empty')
-        raise Exception
+        logger.info('Log is empty')
+        return
 
     logger.info('Calculating time')
 
     for url, time in urls.items():
         report.append(calc_time(url, time, total_time, total_count))
+
+    if error_limit and errors_count > error_limit:
+        logger.warning("Exceeded errors limit!")
 
     return report
 
@@ -176,7 +221,7 @@ def create_report(cfg):
         return
 
     logger.info("Generate report")
-    report = generate_report(last_log.path)
+    report = generate_report(last_log.path, cfg['ERROR_LIMIT'])
 
     logger.info(f'Writing report to {report_file}')
     write_report(cfg, report, report_file)
@@ -184,50 +229,11 @@ def create_report(cfg):
     logger.info('Done')
 
 
-def get_config_path_from_cli():
-    """ Check arguments and return config file path or None"""
-
-    logger.info('Set up config')
-
-    cfg_parser = argparse.ArgumentParser("python3 log_analyzer.py")
-    cfg_parser.add_argument('--config', action='store',
-                            help='Path to config file')
-    return cfg_parser.parse_args().config
-
-
-def setup_config(config_file):
-    """ Read config from file and update current"""
-    try:
-        with open(config_file) as file:
-            cfg = json.load(file)
-            config.update(cfg)
-    except Exception:
-        logger.warning('Can\'t set up config from file. Using default config')
-
-    return config
-
-
-def check_config(config):
-    """ Checking config """
-
-    if not os.path.exists(config['LOG_DIR']):
-        logger.error('No such directory {}'.format(config['LOG_DIR']))
-        raise FileExistsError
-
-    if not os.path.exists(config['REPORT_DIR']):
-        logger.info('Report dir doesn\'t exist. Creating new.')
-        os.mkdir(config['REPORT_DIR'])
-
-    if config['REPORT_SIZE'] < 1:
-        logger.error('Wrong report size!')
-        raise
-
-
 def main():
     """ Main """
 
     try:
-        cfg = setup_config(get_config_path_from_cli())
+        cfg = setup_config(get_args_from_cli().config)
         check_config(cfg)
         create_report(cfg)
     except Exception as exc:
