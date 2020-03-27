@@ -9,11 +9,10 @@ import glob
 import argparse
 import datetime
 import json
+import logging
 from collections import namedtuple
 from string import Template
 
-from logger_config import setup_logging
-logger = setup_logging(__name__)
 
 # log_format ui_short '$remote_addr  $remote_user $http_x_real_ip [$time_local] "$request" '
 #                     '$status $body_bytes_sent "$http_referer" '
@@ -52,67 +51,27 @@ Log = namedtuple('Log', 'path date')
 LogRecord = namedtuple('LogRecord', 'url time')
 
 
-def get_args_from_cli():
-    """ Return arguments from CLI """
-
-    cfg_parser = argparse.ArgumentParser("python3 log_analyzer.py")
-    cfg_parser.add_argument('--config',
-                            help='Path to config file',
-                            default=DEFAULT_CONFIG)
-    return cfg_parser.parse_args()
-
-
-def setup_config(config_file):
-    """ Read config from file and update current"""
-    try:
-        with open(config_file) as file:
-            cfg = json.load(file)
-            config.update(cfg)
-    except Exception:
-        logger.error('Can\'t set up config from file!')
-        raise
-
-    return config
-
-
-def check_config(config):
-    """ Checking config """
-
-    if not os.path.exists(config['LOG_DIR']):
-        logger.error('No such directory {}'.format(config['LOG_DIR']))
-        raise FileExistsError
-
-    if not os.path.exists(config['REPORT_DIR']):
-        logger.info('Report dir doesn\'t exist. Creating new.')
-        os.mkdir(config['REPORT_DIR'])
-
-    if config['REPORT_SIZE'] < 1:
-        logger.error('Wrong report size!')
-        raise
-
-    if config['ERROR_LIMIT'] < 0:
-        logger.error('Wrong error limit value!')
-        raise
-
-
 def get_last_log(directory):
     """ Return (path, date) last log in directory
     or (None, default_date) if log not found """
 
     last_log = Log(None, None)
 
-    filenames = glob.glob(directory+'/*')
+    filenames = os.listdir(directory)
 
     for file in filenames:
-        match = log_name_pattern.search(os.path.basename(file))
+        match = log_name_pattern.search(file)
         if match:
             try:
                 current_date = datetime.datetime.strptime(
                     match.group('date'), '%Y%m%d').date()
-                if not last_log.date or current_date > last_log.date:
-                    last_log = Log(file, current_date)
-            except Exception:
-                logger.error('Can\'t parse log file date')
+            except ValueError:
+                logging.exception('Can\'t parse log file date')
+                raise ValueError
+
+            if not last_log.date or current_date > last_log.date:
+                abs_path = '/'.join([directory, file])
+                last_log = Log(abs_path, current_date)
 
     return last_log
 
@@ -152,10 +111,10 @@ def calc_time(url, time, total_time, total_count):
         "count_perc": count/total_count*100}
 
 
-def generate_report(log_path, error_limit=None):
+def generate_report(log_path, parser, error_limit=None):
     """ Parsing log file and return report data """
 
-    logger.info(f'Parsing last log: {log_path}')
+    logging.info(f'Parsing last log: {log_path}')
 
     urls = {}
     report = []
@@ -163,7 +122,7 @@ def generate_report(log_path, error_limit=None):
     total_count = 0
     total_time = 0
 
-    for record in gen_parse_log(log_path):
+    for record in parser(log_path):
         if not record:
             errors_count += 1
             continue
@@ -175,16 +134,16 @@ def generate_report(log_path, error_limit=None):
         total_count += 1
 
     if not total_count:
-        logger.info('Log is empty')
+        logging.info('Log is empty')
         return
 
-    logger.info('Calculating time')
+    logging.info('Calculating time')
 
     for url, time in urls.items():
         report.append(calc_time(url, time, total_time, total_count))
 
     if error_limit and errors_count > error_limit:
-        logger.warning("Exceeded errors limit!")
+        logging.warning("Exceeded errors limit!")
 
     return report
 
@@ -207,37 +166,81 @@ def write_report(cfg, report, report_file):
 def create_report(cfg):
     """ Creating report """
 
-    logger.info('Getting last log')
+    logging.info('Getting last log')
     last_log = get_last_log(cfg['LOG_DIR'])
     if not last_log.path:
-        logger.error('Logs not found')
+        logging.error('Logs not found')
         return
 
-    logger.info('Check existing report')
+    logging.info('Check existing report')
     report_file = cfg['REPORT_DIR'] + \
         '/report-{}.html'.format(last_log.date.strftime('%Y.%m.%d'))
     if os.path.exists(report_file):
-        logger.info(f'Report already have being done {report_file}')
+        logging.info(f'Report already have being done {report_file}')
         return
 
-    logger.info("Generate report")
+    logging.info("Generate report")
     report = generate_report(last_log.path, cfg['ERROR_LIMIT'])
 
-    logger.info(f'Writing report to {report_file}')
+    logging.info(f'Writing report to {report_file}')
     write_report(cfg, report, report_file)
 
-    logger.info('Done')
+    logging.info('Done')
 
+
+def get_args_from_cli():
+    """ Return arguments from CLI """
+
+    cfg_parser = argparse.ArgumentParser("python3 log_analyzer.py")
+    cfg_parser.add_argument('--config',
+                            help='Path to config file',
+                            default=DEFAULT_CONFIG)
+    return cfg_parser.parse_args()
+
+
+def setup_config(config_file):
+    """ Read config from file and update current"""
+    try:
+        with open(config_file) as file:
+            cfg = json.load(file)
+            config.update(cfg)
+    except Exception:
+        logging.error('Can\'t set up config from file!')
+        raise
+
+    return config
+
+
+def check_config(config):
+    """ Checking config """
+
+    if not os.path.exists(config['LOG_DIR']):
+        logging.error('No such directory {}'.format(config['LOG_DIR']))
+        raise FileExistsError
+
+    if not os.path.exists(config['REPORT_DIR']):
+        logging.info('Report dir doesn\'t exist. Creating new.')
+        os.mkdir(config['REPORT_DIR'])
+
+    if config['REPORT_SIZE'] < 1:
+        logging.error('Wrong report size!')
+        raise
+
+    if config['ERROR_LIMIT'] < 0:
+        logging.error('Wrong error limit value!')
+        raise
 
 def main():
-    """ Main """
+
+    logging.basicConfig(level=logging.INFO,
+                    format='[%(asctime)s] %(levelname).1s %(message)s', datefmt='%Y.%m.%d %H:%M:%S')
 
     try:
         cfg = setup_config(get_args_from_cli().config)
         check_config(cfg)
         create_report(cfg)
     except Exception as exc:
-        logger.exception(f'Can\'t create report {exc}')
+        logging.exception(f'Can\'t create report {exc}')
 
 
 if __name__ == "__main__":
