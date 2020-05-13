@@ -2,8 +2,10 @@ import hashlib
 import datetime
 import functools
 import unittest
+from http import HTTPStatus
 
 import api
+import consts
 
 def cases(cases):
     def decorator(f):
@@ -26,15 +28,15 @@ class TestSuite(unittest.TestCase):
         return api.method_handler({"body": request, "headers": self.headers}, self.context, self.settings)
 
     def set_valid_auth(self, request):
-        if request.get("login") == api.ADMIN_LOGIN:
-            request["token"] = hashlib.sha512((datetime.datetime.now().strftime("%Y%m%d%H") + api.ADMIN_SALT).encode('utf-8')).hexdigest()
+        if request.get("login") == consts.ADMIN_LOGIN:
+            request["token"] = hashlib.sha512((datetime.datetime.now().strftime("%Y%m%d%H") + consts.ADMIN_SALT).encode('utf-8')).hexdigest()
         else:
-            msg = request.get("account", "") + request.get("login", "") + api.SALT
+            msg = request.get("account", "") + request.get("login", "") + consts.SALT
             request["token"] = hashlib.sha512(msg.encode('utf-8')).hexdigest()
 
     def test_empty_request(self):
         _, code = self.get_response({})
-        self.assertEqual(api.INVALID_REQUEST, code)
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, code)
 
     @cases([
         {"account": "horns&hoofs", "login": "h&f", "method": "online_score", "token": "", "arguments": {}},
@@ -43,7 +45,7 @@ class TestSuite(unittest.TestCase):
     ])
     def test_bad_auth(self, request):
         _, code = self.get_response(request)
-        self.assertEqual(api.FORBIDDEN, code)
+        self.assertEqual(HTTPStatus.FORBIDDEN, code)
 
     @cases([
         {"account": "horns&hoofs", "login": "h&f", "method": "online_score"},
@@ -53,7 +55,7 @@ class TestSuite(unittest.TestCase):
     def test_invalid_method_request(self, request):
         self.set_valid_auth(request)
         response, code = self.get_response(request)
-        self.assertEqual(api.INVALID_REQUEST, code)
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, code)
         self.assertTrue(len(response))
 
     @cases([
@@ -75,7 +77,7 @@ class TestSuite(unittest.TestCase):
         request = {"account": "horns&hoofs", "login": "h&f", "method": "online_score", "arguments": arguments}
         self.set_valid_auth(request)
         response, code = self.get_response(request)
-        self.assertEqual(api.INVALID_REQUEST, code, arguments)
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, code, arguments)
         self.assertTrue(len(response))
 
     @cases([
@@ -92,7 +94,7 @@ class TestSuite(unittest.TestCase):
         request = {"account": "horns&hoofs", "login": "h&f", "method": "online_score", "arguments": arguments}
         self.set_valid_auth(request)
         response, code = self.get_response(request)
-        self.assertEqual(api.OK, code, arguments)
+        self.assertEqual(HTTPStatus.OK, code, arguments)
         score = response.get("score")
         self.assertTrue(isinstance(score, (int, float)) and score >= 0, arguments)
         self.assertEqual(sorted(self.context["has"]), sorted(arguments.keys()))
@@ -102,7 +104,7 @@ class TestSuite(unittest.TestCase):
         request = {"account": "horns&hoofs", "login": "admin", "method": "online_score", "arguments": arguments}
         self.set_valid_auth(request)
         response, code = self.get_response(request)
-        self.assertEqual(api.OK, code)
+        self.assertEqual(HTTPStatus.OK, code)
         score = response.get("score")
         self.assertEqual(score, 42)
 
@@ -118,7 +120,7 @@ class TestSuite(unittest.TestCase):
         request = {"account": "horns&hoofs", "login": "h&f", "method": "clients_interests", "arguments": arguments}
         self.set_valid_auth(request)
         response, code = self.get_response(request)
-        self.assertEqual(api.INVALID_REQUEST, code, arguments)
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, code, arguments)
         self.assertTrue(len(response))
 
     @cases([
@@ -130,7 +132,7 @@ class TestSuite(unittest.TestCase):
         request = {"account": "horns&hoofs", "login": "h&f", "method": "clients_interests", "arguments": arguments}
         self.set_valid_auth(request)
         response, code = self.get_response(request)
-        self.assertEqual(api.OK, code, arguments)
+        self.assertEqual(HTTPStatus.OK, code, arguments)
         self.assertEqual(len(arguments["client_ids"]), len(response))
         self.assertTrue(all(v and isinstance(v, list) and all(isinstance(i, str) for i in v)
                         for v in response.values()))

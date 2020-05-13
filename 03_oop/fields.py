@@ -3,7 +3,9 @@
 import re
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from consts import UNKNOWN, GENDERS
+
+from exceptions import ValidationError
+from consts import UNKNOWN, GENDERS, EMAIL_PATTERN, PHONE_PATTERN, DATE_FORMAT
 
 
 class Field(object):
@@ -48,10 +50,8 @@ class EmailField(CharField):
     def validate(self, value):
         super(EmailField, self).validate(value)
 
-        email_pattern = r'.+@.+\..+'
-
-        if not re.match(email_pattern, str(value)):
-            raise ValueError(f'invalid email address: {value}')
+        if not re.match(EMAIL_PATTERN, str(value)):
+            raise ValidationError(f'invalid email address: {value}')
 
 
 class PhoneField(Field):
@@ -62,9 +62,8 @@ class PhoneField(Field):
     def validate(self, value):
         super(PhoneField, self).validate(value)
 
-        phone_pattern = r'^7\d{10}$'
-        if not re.match(phone_pattern, str(value)):
-            raise ValueError(f'invalid phone number: {value}')
+        if not re.match(PHONE_PATTERN, str(value)):
+            raise ValidationError(f'invalid phone number: {value}')
 
 
 class DateField(Field):
@@ -77,9 +76,9 @@ class DateField(Field):
 
         if value:
             try:
-                datetime.strptime(value, '%d.%m.%Y')
+                datetime.strptime(value, DATE_FORMAT)
             except ValueError:
-                raise ValueError(f'invalid date format: {value}')
+                raise ValidationError(f'invalid date format: {value}')
 
 
 class BirthDayField(DateField):
@@ -96,9 +95,9 @@ class BirthDayField(DateField):
                 from_date = datetime.now()
                 from_date -= relativedelta(years=70)
                 if value.year < from_date.year:
-                    raise ValueError
+                    raise ValidationError
             except ValueError:
-                raise ValueError(f'invalid date format: {value}')
+                raise ValidationError(f'invalid date format: {value}')
 
 
 class GenderField(Field):
@@ -108,13 +107,13 @@ class GenderField(Field):
 
     def validate(self, value):
         if not isinstance(value, self.type):
-            raise Exception('invalid value type of field "gender"')
+            raise ValidationError('invalid value type of field "gender"')
 
         if not value and value != UNKNOWN and not self.nullable:
-            Exception('field "gender" cannot be empty')
+            raise ValidationError('field "gender" cannot be empty')
 
         if value not in GENDERS:
-            raise Exception('invalid value of field "gender"')
+            raise ValidationError('invalid value of field "gender"')
 
 
 class ClientIDsField(Field):
@@ -128,4 +127,4 @@ class ClientIDsField(Field):
         if value:
             for obj in value:
                 if not isinstance(obj, int) or obj < 0:
-                    raise Exception(f'invalid client id {value}')
+                    raise ValidationError(f'invalid client id {value}')

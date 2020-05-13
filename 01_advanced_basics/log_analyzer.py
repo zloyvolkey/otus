@@ -224,16 +224,17 @@ def check_config(config):
 
     if config['REPORT_SIZE'] < 1:
         logging.error('Wrong report size!')
-        raise
+        raise ValueError
 
     if config['ERROR_LIMIT'] < 0:
         logging.error('Wrong error limit value!')
-        raise
+        raise ValueError
+
 
 def main():
 
     logging.basicConfig(level=logging.INFO,
-                    format='[%(asctime)s] %(levelname).1s %(message)s', datefmt='%Y.%m.%d %H:%M:%S')
+                        format='[%(asctime)s] %(levelname).1s %(message)s', datefmt='%Y.%m.%d %H:%M:%S')
 
     try:
         cfg = setup_config(get_args_from_cli().config)

@@ -9,44 +9,12 @@ import logging
 from argparse import ArgumentParser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+from http import HTTPStatus
+
 from requests import MethodRequest, OnlineScoreRequest, ClientsInterestsRequest
 from scoring import get_score, get_interests
-from consts import (
-    ADMIN_SALT, SALT,
-    OK, BAD_REQUEST,
-    FORBIDDEN, NOT_FOUND,
-    INVALID_REQUEST, INTERNAL_ERROR,
-    ERRORS
-)
-
-
-SALT = "Otus"
-ADMIN_LOGIN = "admin"
-ADMIN_SALT = "42"
-
-OK = 200
-BAD_REQUEST = 400
-FORBIDDEN = 403
-NOT_FOUND = 404
-INVALID_REQUEST = 422
-INTERNAL_ERROR = 500
-
-ERRORS = {
-    BAD_REQUEST: "Bad Request",
-    FORBIDDEN: "Forbidden",
-    NOT_FOUND: "Not Found",
-    INVALID_REQUEST: "Invalid Request",
-    INTERNAL_ERROR: "Internal Server Error",
-}
-
-UNKNOWN = 0
-MALE = 1
-FEMALE = 2
-GENDERS = {
-    UNKNOWN: "unknown",
-    MALE: "male",
-    FEMALE: "female",
-}
+from consts import ADMIN_SALT, SALT, ADMIN_LOGIN
+from errors_const import ERRORS
 
 
 
@@ -66,7 +34,7 @@ def online_score_handler(arguments, ctx, store):
     arguments = OnlineScoreRequest(arguments)
 
     if not arguments.is_valid:
-        return arguments.errors, INVALID_REQUEST
+        return arguments.errors, HTTPStatus.UNPROCESSABLE_ENTITY
 
     ctx['has'] = arguments.initialized_fields
 
@@ -84,21 +52,21 @@ def online_score_handler(arguments, ctx, store):
             last_name=arguments.last_name
         )
 
-    return {'score': score}, OK
+    return {'score': score}, HTTPStatus.OK
 
 
 def clients_interests_handler(arguments, ctx, store):
     arguments = ClientsInterestsRequest(arguments)
 
     if not arguments.is_valid:
-        return ', '.join(arguments.errors), INVALID_REQUEST
+        return ', '.join(arguments.errors), HTTPStatus.UNPROCESSABLE_ENTITY
 
     ctx['nclients'] = len(arguments.client_ids)
 
     try:
-        return {client_id: get_interests(store, client_id) for client_id in arguments.client_ids}, OK
+        return {client_id: get_interests(store, client_id) for client_id in arguments.client_ids}, HTTPStatus.OK
     except Exception as e:
-        return {'error': str(e)}, INTERNAL_ERROR
+        return {'error': str(e)}, HTTPStatus.UNPROCESSABLE_ENTITY
 
 
 def method_handler(request, ctx, store):
@@ -111,14 +79,14 @@ def method_handler(request, ctx, store):
     method_request = MethodRequest(request['body'])
 
     if not method_request.is_valid:
-        return ', '.join(method_request.errors), INVALID_REQUEST
+        return ', '.join(method_request.errors), HTTPStatus.UNPROCESSABLE_ENTITY
 
     if not check_auth(method_request):
-        return ERRORS[FORBIDDEN], FORBIDDEN
+        return ERRORS[HTTPStatus.FORBIDDEN], HTTPStatus.FORBIDDEN
 
     method = methods.get(method_request.method)
     if not method:
-        return f'method "{method_request.method}" not allowed', INVALID_REQUEST
+        return f'method "{method_request.method}" not allowed', HTTPStatus.UNPROCESSABLE_ENTITY
 
     ctx['is_admin'] = method_request.is_admin
 
@@ -135,7 +103,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
         return headers.get('HTTP_X_REQUEST_ID', uuid.uuid4().hex)
 
     def do_POST(self):
-        response, code = {}, OK
+        response, code = {}, HTTPStatus.OK
         context = {"request_id": self.get_request_id(self.headers)}
 
         request = None
@@ -144,7 +112,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
             request = json.loads(data_string.decode('utf-8'))
         except Exception as e:
             logging.error(e)
-            code = BAD_REQUEST
+            code = HTTPStatus.BAD_REQUEST
 
         if request:
             path = self.path.strip("/")
@@ -156,9 +124,9 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
                         {"body": request, "headers": self.headers}, context, self.store)
                 except Exception as e:
                     logging.exception(f"Unexpected error: {e}")
-                    code = INTERNAL_ERROR
+                    code = HTTPStatus.UNPROCESSABLE_ENTITY
             else:
-                code = NOT_FOUND
+                code = HTTPStatus.NOT_FOUND
 
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
